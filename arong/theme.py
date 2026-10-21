@@ -24,6 +24,17 @@ CSS = """
 .stApp [data-testid="stMarkdownContainer"] li, .stApp [data-testid="stWidgetLabel"] p,
 .stApp [data-testid="stMetricValue"], .stApp [data-testid="stMetricLabel"] p{color:var(--ink);}
 .stApp [data-testid="stCaptionContainer"], .stApp [data-testid="stCaptionContainer"] p{color:var(--muted);}
+/* 입력 칸: 기기 화면 모드와 상관없이 흰 바탕 + 진한 글씨 */
+.stApp [data-baseweb="input"], .stApp [data-baseweb="base-input"], .stApp [data-baseweb="textarea"],
+.stApp [data-baseweb="select"] > div{background:#ffffff !important;border-color:#e6d6bf !important;}
+.stApp input, .stApp textarea{background:#ffffff !important;color:var(--ink) !important;
+  -webkit-text-fill-color:var(--ink) !important;caret-color:var(--ink) !important;}
+.stApp input::placeholder, .stApp textarea::placeholder{color:#b0a7b5 !important;
+  -webkit-text-fill-color:#b0a7b5 !important;opacity:1;}
+.stApp [data-baseweb="select"] div, .stApp [data-baseweb="select"] span{color:var(--ink) !important;}
+.stApp [data-baseweb="select"] svg, .stApp [data-baseweb="input"] svg{fill:var(--muted) !important;color:var(--muted) !important;}
+.stApp [data-testid="stFileUploaderDropzone"]{background:#ffffff !important;}
+.stApp [data-testid="stFileUploaderDropzone"] *{color:var(--ink) !important;}
 
 /* ---------- 머리말 ---------- */
 .hero{display:flex;align-items:center;justify-content:space-between;gap:16px;background:var(--card);
@@ -51,6 +62,8 @@ CSS = """
 .st-key-nav div[role="radiogroup"] > label:has(input:checked){background:var(--ink);border-color:var(--ink);}
 .stApp .st-key-nav div[role="radiogroup"] > label:has(input:checked) p{color:#fff;}
 .st-key-nav div[role="radiogroup"] > label > div:first-child:not(:has([data-testid="stMarkdownContainer"])){display:none;}
+.stApp .st-key-nav input[type="radio"]{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none;}
+.stApp .st-key-nav div[role="radiogroup"] > label{cursor:pointer;}
 .me{background:var(--chip);border-radius:999px;padding:6px 14px;display:inline-block;color:var(--ink);}
 .me.off{background:transparent;color:var(--muted);}
 
