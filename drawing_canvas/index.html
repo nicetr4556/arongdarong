@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>아롱다롱 그림판</title>
+<style>
+  :root{
+    --ink:#2d2a32; --muted:#7a7480; --line:#eadfce; --paper:#fffbf3; --chip:#fff1de;
+    --coral:#f26b5b; --mint:#3bb59a; --sky:#4a90d9; --mustard:#f2b33d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:transparent;color:var(--ink);
+    font-family:"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",system-ui,sans-serif;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  .wrap{padding:2px 2px 6px}
+  .bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between;
+    background:var(--chip);border:1px solid var(--line);border-radius:14px;padding:6px 8px;margin-bottom:6px}
+  .group{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+  button{font:inherit;border:1px solid transparent;background:#fff;color:var(--ink);border-radius:10px;
+    min-height:38px;padding:4px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;
+    font-size:14px;box-shadow:0 1px 0 rgba(0,0,0,.06)}
+  button:hover{border-color:var(--line)}
+  button.on{background:var(--ink);color:#fff}
+  button:disabled{opacity:.35;cursor:default}
+  .size{width:38px;padding:0;justify-content:center}
+  .size i{display:block;border-radius:50%;background:currentColor}
+  .sep{width:1px;height:26px;background:var(--line);margin:0 2px}
+  .palette{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:2px 2px 8px}
+  .sw{width:30px;height:30px;min-height:30px;border-radius:50%;padding:0;border:2px solid #fff;
+    box-shadow:0 0 0 1px var(--line)}
+  .sw.on{box-shadow:0 0 0 3px var(--ink)}
+  .st{width:42px;height:42px;min-height:42px;padding:0;justify-content:center;font-size:24px;border-radius:12px}
+  .st.on{box-shadow:0 0 0 3px var(--ink);background:#fff}
+  .stage{position:relative;width:100%;aspect-ratio:16/10;border-radius:14px;overflow:hidden;
+    border:2px dashed #e3d3bd;background:#fff;touch-action:none}
+  canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
+  #overlay{pointer-events:none}
+  .foot{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--muted);padding:6px 4px 0}
+  .ok{color:var(--mint);font-weight:700}
+  .hidden{display:none !important}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <div class="bar">
+    <div class="group" role="toolbar" aria-label="도구">
+      <button id="t-pen" class="on" title="연필">✏️ 연필</button>
+      <button id="t-eraser" title="지우개">🧽 지우개</button>
+      <button id="t-stamp" title="스탬프">🌟 스탬프</button>
+    </div>
+    <div class="group" aria-label="굵기">
+      <button class="size" data-size="0" title="가늘게"><i style="width:6px;height:6px"></i></button>
+      <button class="size on" data-size="1" title="보통"><i style="width:12px;height:12px"></i></button>
+      <button class="size" data-size="2" title="굵게"><i style="width:20px;height:20px"></i></button>
+    </div>
+    <div class="group">
+      <button id="a-undo" title="되돌리기" disabled>↩️ 되돌리기</button>
+      <button id="a-redo" title="다시 하기" disabled>↪️</button>
+      <button id="a-clear" title="모두 지우기">🗑️ 새로 그리기</button>
+    </div>
+  </div>
+  <div class="palette" id="colors" aria-label="색깔"></div>
+  <div class="palette hidden" id="stamps" aria-label="스탬프"></div>
+  <div class="stage" id="stage">
+    <canvas id="main" width="1000" height="625" aria-label="그림 그리는 곳"></canvas>
+    <canvas id="overlay" width="1000" height="625"></canvas>
+  </div>
+  <div class="foot">
+    <span id="hint">손가락이나 펜, 마우스로 그려요. 다 그리면 그냥 다음 칸으로 가면 돼요!</span>
+    <span id="status"></span>
+  </div>
+</div>
+<script>
+(function(){
+  const W = 1000, H = 625;
+  const COLORS = ["#2d2a32","#8a8a8a","#e74c3c","#ff8c42","#f6c90e","#2ecc71","#16a085","#3498db","#2c3e9e","#9b59b6","#ff7eb6","#8d5a3b"];
+  const STAMPS = ["😢","😅","😡","😱","🤔","💡","⭐","❤️","👍","❓","❗","✅"];
+  const SIZES = { pen:[4,10,22], eraser:[18,40,80], stamp:[56,92,140] };
+
+  const main = document.getElementById("main"), overlay = document.getElementById("overlay");
+  const ctx = main.getContext("2d"), octx = overlay.getContext("2d");
+  const stage = document.getElementById("stage");
+  const statusEl = document.getElementById("status");
+
+  let tool = "pen", color = COLORS[0], sizeIdx = 1, stamp = STAMPS[0];
+  let ops = [], redo = [], base = null, current = null, activePointer = null;
+  let initialized = false, sendTimer = null;
+
+  // ---------- Streamlit component protocol (v1) ----------
+  function post(type, data){
+    window.parent.postMessage(Object.assign({isStreamlitMessage:true, type:type}, data||{}), "*");
+  }
+  function setHeight(){
+    const h = Math.ceil(document.getElementById("wrap").getBoundingClientRect().height) + 4;
+    post("streamlit:setFrameHeight", {height:h});
+  }
+  window.addEventListener("message", function(ev){
+    const d = ev.data;
+    if(!d || d.type !== "streamlit:render") return;
+    const args = d.args || {};
+    if(!initialized){
+      initialized = true;
+      if(args.hint){ document.getElementById("hint").textContent = args.hint; }
+      if(args.initial){ loadBase(args.initial); }
+    }
+    setHeight();
+  });
+
+  function scheduleSend(){
+    statusEl.textContent = "…";
+    statusEl.className = "";
+    clearTimeout(sendTimer);
+    sendTimer = setTimeout(sendValue, 450);
+  }
+  function sendValue(){
+    const empty = isEmpty();
+    const dataUrl = empty ? null : main.toDataURL("image/png");
+    post("streamlit:setComponentValue", {value:{dataUrl:dataUrl, empty:empty, n:ops.length, t:Date.now()}, dataType:"json"});
+    statusEl.textContent = empty ? "그림이 비어 있어요" : "✓ 그림이 잘 들어갔어요";
+    statusEl.className = empty ? "" : "ok";
+  }
+
+  // ---------- drawing ----------
+  function lastClearIndex(){
+    for(let i = ops.length - 1; i >= 0; i--){ if(ops[i].type === "clear") return i; }
+    return -1;
+  }
+  function isEmpty(){
+    const lc = lastClearIndex();
+    if(lc === -1 && base) return false;
+    for(let i = lc + 1; i < ops.length; i++){ if(ops[i].type !== "clear") return false; }
+    return true;
+  }
+  function paintStroke(c, op){
+    const p = op.pts;
+    c.save();
+    c.lineCap = "round"; c.lineJoin = "round"; c.lineWidth = op.size;
+    const col = op.mode === "eraser" ? "#ffffff" : op.color;
+    c.strokeStyle = col; c.fillStyle = col;
+    if(p.length === 1){
+      c.beginPath(); c.arc(p[0][0], p[0][1], op.size/2, 0, Math.PI*2); c.fill();
+    } else {
+      c.beginPath(); c.moveTo(p[0][0], p[0][1]);
+      for(let i = 1; i < p.length - 1; i++){
+        const mx = (p[i][0] + p[i+1][0]) / 2, my = (p[i][1] + p[i+1][1]) / 2;
+        c.quadraticCurveTo(p[i][0], p[i][1], mx, my);
+      }
+      const l = p[p.length-1]; c.lineTo(l[0], l[1]); c.stroke();
+    }
+    c.restore();
+  }
+  function paintStamp(c, op){
+    c.save();
+    c.font = op.size + "px 'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif";
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillText(op.emoji, op.x, op.y);
+    c.restore();
+  }
+  function paintOp(c, op){
+    if(op.type === "stroke") paintStroke(c, op);
+    else if(op.type === "stamp") paintStamp(c, op);
+    else if(op.type === "clear"){ c.fillStyle = "#fff"; c.fillRect(0, 0, W, H); }
+  }
+  function redraw(){
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
+    if(base) drawBase();
+    ops.forEach(function(op){ paintOp(ctx, op); });
+    refreshButtons();
+  }
+  function drawBase(){
+    const r = Math.min(W / base.width, H / base.height);
+    const w = base.width * r, h = base.height * r;
+    ctx.drawImage(base, (W - w) / 2, (H - h) / 2, w, h);
+  }
+  function loadBase(src){
+    const img = new Image();
+    img.onload = function(){ base = img; redraw(); };
+    img.src = src;
+  }
+  function refreshButtons(){
+    document.getElementById("a-undo").disabled = ops.length === 0;
+    document.getElementById("a-redo").disabled = redo.length === 0;
+  }
+  function commit(op){
+    ops.push(op); redo = [];
+    refreshButtons();
+    scheduleSend();
+  }
+
+  function toCanvas(e){
+    const r = main.getBoundingClientRect();
+    return [ (e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height ];
+  }
+  stage.addEventListener("pointerdown", function(e){
+    if(activePointer !== null) return;
+    e.preventDefault();
+    const pt = toCanvas(e);
+    if(tool === "stamp"){
+      const op = {type:"stamp", emoji:stamp, x:pt[0], y:pt[1], size:SIZES.stamp[sizeIdx]};
+      paintOp(ctx, op); commit(op);
+      return;
+    }
+    activePointer = e.pointerId;
+    try{ stage.setPointerCapture(e.pointerId); }catch(_){}
+    current = {type:"stroke", mode:tool, color:color, size:SIZES[tool][sizeIdx], pts:[pt]};
+    octx.clearRect(0, 0, W, H); paintStroke(octx, current);
+  });
+  stage.addEventListener("pointermove", function(e){
+    if(e.pointerId !== activePointer || !current) return;
+    e.preventDefault();
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    (evs.length ? evs : [e]).forEach(function(ce){ current.pts.push(toCanvas(ce)); });
+    octx.clearRect(0, 0, W, H); paintStroke(octx, current);
+  });
+  function endStroke(e){
+    if(e.pointerId !== activePointer) return;
+    activePointer = null;
+    if(!current) return;
+    octx.clearRect(0, 0, W, H);
+    paintStroke(ctx, current);
+    const op = current; current = null;
+    commit(op);
+  }
+  stage.addEventListener("pointerup", endStroke);
+  stage.addEventListener("pointercancel", endStroke);
+
+  // ---------- toolbar ----------
+  const colorsEl = document.getElementById("colors"), stampsEl = document.getElementById("stamps");
+  COLORS.forEach(function(c, i){
+    const b = document.createElement("button");
+    b.className = "sw" + (i === 0 ? " on" : ""); b.style.background = c; b.title = "색깔 " + (i+1);
+    b.setAttribute("aria-label", "색깔 " + (i+1));
+    b.onclick = function(){
+      color = c;
+      colorsEl.querySelectorAll(".sw").forEach(function(x){ x.classList.remove("on"); });
+      b.classList.add("on");
+      if(tool !== "pen") setTool("pen");
+    };
+    colorsEl.appendChild(b);
+  });
+  STAMPS.forEach(function(s, i){
+    const b = document.createElement("button");
+    b.className = "st" + (i === 0 ? " on" : ""); b.textContent = s; b.title = "스탬프 " + s;
+    b.onclick = function(){
+      stamp = s;
+      stampsEl.querySelectorAll(".st").forEach(function(x){ x.classList.remove("on"); });
+      b.classList.add("on");
+    };
+    stampsEl.appendChild(b);
+  });
+  function setTool(t){
+    tool = t;
+    ["pen","eraser","stamp"].forEach(function(n){
+      document.getElementById("t-" + n).classList.toggle("on", n === t);
+    });
+    stampsEl.classList.toggle("hidden", t !== "stamp");
+    colorsEl.classList.toggle("hidden", t === "stamp");
+    setHeight();
+  }
+  document.getElementById("t-pen").onclick = function(){ setTool("pen"); };
+  document.getElementById("t-eraser").onclick = function(){ setTool("eraser"); };
+  document.getElementById("t-stamp").onclick = function(){ setTool("stamp"); };
+  document.querySelectorAll(".size").forEach(function(b){
+    b.onclick = function(){
+      sizeIdx = +b.dataset.size;
+      document.querySelectorAll(".size").forEach(function(x){ x.classList.remove("on"); });
+      b.classList.add("on");
+    };
+  });
+  document.getElementById("a-undo").onclick = function(){
+    if(!ops.length) return;
+    redo.push(ops.pop()); redraw(); scheduleSend();
+  };
+  document.getElementById("a-redo").onclick = function(){
+    if(!redo.length) return;
+    ops.push(redo.pop()); redraw(); scheduleSend();
+  };
+  document.getElementById("a-clear").onclick = function(){
+    if(isEmpty()) return;
+    commit({type:"clear"}); redraw();
+  };
+
+  // ---------- start ----------
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
+  if(window.ResizeObserver){ new ResizeObserver(setHeight).observe(document.getElementById("wrap")); }
+  window.addEventListener("resize", setHeight);
+  post("streamlit:componentReady", {apiVersion:1});
+  setHeight();
+})();
+</script>
+</body>
+</html>
