@@ -122,14 +122,14 @@ def secret(name: str, default=None):
 # 저장소
 # =============================================================================
 @st.cache_resource
-def get_store():
-    url, key = secret("SUPABASE_URL"), secret("SUPABASE_KEY")
+def get_store(url, key, bucket):
+    # url·key를 인자로 받아서, Secrets를 바꾸면 새 연결이 바로 만들어지게 한다.
     if url and key:
-        return SupabaseStore(str(url), str(key), bucket=str(secret("SUPABASE_BUCKET", "arongdarong")))
+        return SupabaseStore(str(url), str(key), bucket=str(bucket))
     return LocalStore(os.path.join(APP_DIR, "arong_data"))
 
 
-store = get_store()
+store = get_store(secret("SUPABASE_URL"), secret("SUPABASE_KEY"), secret("SUPABASE_BUCKET", "arongdarong"))
 
 
 @st.cache_data(ttl=15, show_spinner=False)
